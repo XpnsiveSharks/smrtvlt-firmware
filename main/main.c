@@ -30,7 +30,6 @@ static const char *TAG = "MAIN";
 #define API_URL_MAX_LEN     128
 #define NFC_UID_MAX_LEN     11
 #define HW_UUID_MAX_LEN     32
-#define TOKEN_MAX_LEN       16
 
 static char s_hw_uuid[HW_UUID_MAX_LEN] = {0};
 static char s_api_url[API_URL_MAX_LEN] = {0};
@@ -44,10 +43,10 @@ static void generate_hardware_uuid(char *uuid, size_t len) {
 
 static void on_pin_auth_result(bool accepted) {
     if (accepted) {
-        ESP_LOGI(TAG, "PIN accepted - unlocking vault");
+        ESP_LOGI(TAG, "PIN accepted — unlocking vault");
         solenoid_unlock();
     } else {
-        ESP_LOGW(TAG, "PIN denied - buzzer feedback");
+        ESP_LOGW(TAG, "PIN denied — buzzer feedback");
         buzzer_beep_short();
     }
 }
@@ -73,48 +72,31 @@ static void run_normal_mode(void) {
 
 static void on_provisioning_done(const provisioning_data_t *data) {
     ESP_LOGI(TAG, "Provisioning complete. Saving data...");
-
     nvs_storage_save_wifi(data->ssid, data->password);
     nvs_storage_save_provisioning_token(data->token);
     if (strlen(data->api_url) > 0) {
         nvs_storage_save_api_url(data->api_url);
     }
-
     provisioning_stop();
-
     ESP_ERROR_CHECK(wifi_manager_init());
     esp_err_t ret = wifi_manager_connect(data->ssid, data->password);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi connection failed after provisioning");
-        return;
-    }
-
+    if (ret != ESP_OK) { ESP_LOGE(TAG, "WiFi connection failed after provisioning"); return; }
     ret = nvs_storage_load_api_url(s_api_url, sizeof(s_api_url));
     if (ret != ESP_OK || strlen(s_api_url) == 0) {
         strncpy(s_api_url, CONFIG_API_BASE_URL, sizeof(s_api_url) - 1);
     }
-
     api_client_init(s_api_url);
-
     generate_hardware_uuid(s_hw_uuid, sizeof(s_hw_uuid));
     nvs_storage_save_hardware_uuid(s_hw_uuid);
-    ESP_LOGI(TAG, "Hardware UUID: %s", s_hw_uuid);
-
     ret = api_client_register_device(s_hw_uuid, data->token);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Device registration failed");
-        return;
-    }
-
+    if (ret != ESP_OK) { ESP_LOGE(TAG, "Device registration failed"); return; }
     nvs_storage_set_provisioned(true);
     ESP_LOGI(TAG, "Device registered and provisioned successfully.");
-
     run_normal_mode();
 }
 
 static void on_nfc_card_tapped(const char *uid) {
     ESP_LOGI(TAG, "NFC card tapped: %s", uid);
-
     char stored_uid[NFC_UID_MAX_LEN] = {0};
     esp_err_t ret = nvs_storage_load_nfc_uid(stored_uid, sizeof(stored_uid));
     if (ret != ESP_OK || strlen(stored_uid) == 0) {
@@ -135,7 +117,6 @@ static void on_nfc_card_tapped(const char *uid) {
 void app_main(void)
 {
     ESP_LOGI(TAG, "smrtvlt firmware booting...");
-
     ESP_ERROR_CHECK(nvs_storage_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -148,15 +129,10 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Device provisioned. Loading credentials...");
-
     char ssid[WIFI_SSID_MAX_LEN] = {0};
     char password[WIFI_PASS_MAX_LEN] = {0};
     esp_err_t ret = nvs_storage_load_wifi(ssid, sizeof(ssid), password, sizeof(password));
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to load WiFi credentials");
-        return;
-    }
-
+    if (ret != ESP_OK) { ESP_LOGE(TAG, "Failed to load WiFi credentials"); return; }
     ret = nvs_storage_load_api_url(s_api_url, sizeof(s_api_url));
     if (ret != ESP_OK || strlen(s_api_url) == 0) {
         strncpy(s_api_url, CONFIG_API_BASE_URL, sizeof(s_api_url) - 1);
@@ -164,21 +140,14 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "Using NVS API URL: %s", s_api_url);
     }
-
     ret = nvs_storage_load_hardware_uuid(s_hw_uuid, sizeof(s_hw_uuid));
     if (ret != ESP_OK || strlen(s_hw_uuid) == 0) {
         generate_hardware_uuid(s_hw_uuid, sizeof(s_hw_uuid));
     }
-
     api_client_init(s_api_url);
-
     ESP_ERROR_CHECK(wifi_manager_init());
     ret = wifi_manager_connect(ssid, password);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi connection failed");
-        return;
-    }
-
+    if (ret != ESP_OK) { ESP_LOGE(TAG, "WiFi connection failed"); return; }
     ESP_LOGI(TAG, "System ready. API: %s", s_api_url);
     run_normal_mode();
 }
