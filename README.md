@@ -19,6 +19,6 @@ ESP-IDF firmware for the SmartVault lock controller.
 3. Build, flash, and monitor firmware.
 
 ## Docs
-- `docs/DEV_SETUP.md`
-- `docs/CONTRIBUTING.md`
-- `docs/HARDWARE_TESTS.md`
+- [`docs/DEV_SETUP.md`](docs/DEV_SETUP.md)
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
+- [`docs/HARDWARE_TESTS.md`](docs/HARDWARE_TESTS.md)
