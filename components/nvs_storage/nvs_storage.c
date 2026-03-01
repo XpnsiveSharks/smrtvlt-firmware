@@ -209,3 +209,27 @@ esp_err_t nvs_storage_load_nfc_uid(char *uid, size_t uid_len)
 {
     return nvs_get_string(KEY_NFC_UID, uid, uid_len);
 }
+
+esp_err_t nvs_storage_erase_all(void)
+{
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for erase: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ret = nvs_erase_all(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to erase NVS: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+    ret = nvs_commit(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit NVS erase: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+    ESP_LOGI(TAG, "NVS erased successfully");
+cleanup:
+    nvs_close(handle);
+    return ret;
+}

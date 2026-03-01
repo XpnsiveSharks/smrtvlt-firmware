@@ -67,7 +67,6 @@ esp_err_t wifi_manager_init(void)
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "WiFi manager initialized");
     return ESP_OK;
@@ -89,6 +88,7 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group,

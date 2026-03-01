@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "esp_err.h"
 #include "esp_event.h"
@@ -15,11 +16,15 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lwip/netdb.h"
+#include "lwip/sockets.h"
 
 static const char *TAG = "PROVISIONING";
 static provisioning_done_callback_t s_callback = NULL;
 static httpd_handle_t s_server = NULL;
 static esp_netif_t *s_ap_netif = NULL;
+static TaskHandle_t s_dns_task_handle = NULL;
+static volatile bool s_dns_running = false;
 
 typedef struct {
     provisioning_done_callback_t callback;
@@ -133,6 +138,142 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, SETUP_HTML, HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t redirect_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static bool build_dns_response(const uint8_t *query, ssize_t query_len, uint8_t *response,
+                               size_t response_size, ssize_t *response_len)
+{
+    size_t question_end = 12;
+    size_t question_len = 0;
+    size_t answer_offset = 0;
+    const uint8_t answer_record[] = {
+        0xC0, 0x0C,
+        0x00, 0x01,
+        0x00, 0x01,
+        0x00, 0x00, 0x00, 0x0A,
+        0x00, 0x04,
+        192,  168,  4,    1,
+    };
+
+    if (query_len < 17 || response_size < sizeof(answer_record) + 12) {
+        return false;
+    }
+
+    while (question_end < (size_t)query_len && query[question_end] != 0x00) {
+        uint8_t label_len = query[question_end];
+        if (label_len == 0 || question_end + 1U + label_len > (size_t)query_len) {
+            return false;
+        }
+        question_end += 1U + label_len;
+    }
+
+    if (question_end + 5U > (size_t)query_len) {
+        return false;
+    }
+
+    question_end += 1U;
+    question_len = (question_end + 4U) - 12U;
+    answer_offset = 12U + question_len;
+
+    if (answer_offset + sizeof(answer_record) > response_size) {
+        return false;
+    }
+
+    memset(response, 0, response_size);
+    response[0] = query[0];
+    response[1] = query[1];
+    response[2] = 0x81;
+    response[3] = 0x80;
+    response[4] = 0x00;
+    response[5] = 0x01;
+    response[6] = 0x00;
+    response[7] = 0x01;
+    response[8] = 0x00;
+    response[9] = 0x00;
+    response[10] = 0x00;
+    response[11] = 0x00;
+
+    memcpy(response + 12, query + 12, question_len);
+    memcpy(response + answer_offset, answer_record, sizeof(answer_record));
+
+    *response_len = (ssize_t)(answer_offset + sizeof(answer_record));
+    return true;
+}
+
+static void dns_server_task(void *arg)
+{
+    (void)arg;
+    int sock = -1;
+    struct sockaddr_in listen_addr = {0};
+    struct timeval timeout = {
+        .tv_sec = 1,
+        .tv_usec = 0,
+    };
+
+    ESP_LOGI(TAG, "DNS server starting on UDP 53");
+
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Failed to create DNS socket");
+        s_dns_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        ESP_LOGE(TAG, "Failed to set DNS socket timeout");
+        close(sock);
+        s_dns_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_port = htons(53);
+    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(sock, (struct sockaddr *)&listen_addr, sizeof(listen_addr)) < 0) {
+        ESP_LOGE(TAG, "Failed to bind DNS socket to port 53");
+        close(sock);
+        s_dns_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    while (s_dns_running) {
+        uint8_t query_buf[512] = {0};
+        uint8_t response_buf[512] = {0};
+        ssize_t query_len = 0;
+        ssize_t response_len = 0;
+        struct sockaddr_in source_addr = {0};
+        socklen_t source_addr_len = sizeof(source_addr);
+
+        query_len = recvfrom(sock, query_buf, sizeof(query_buf), 0, (struct sockaddr *)&source_addr,
+                             &source_addr_len);
+        if (query_len < 0) {
+            continue;
+        }
+
+        if (!build_dns_response(query_buf, query_len, response_buf, sizeof(response_buf), &response_len)) {
+            continue;
+        }
+
+        (void)sendto(sock, response_buf, (size_t)response_len, 0, (struct sockaddr *)&source_addr,
+                     source_addr_len);
+    }
+
+    close(sock);
+    ESP_LOGI(TAG, "DNS server stopped");
+    s_dns_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
 static void provisioning_stop_task(void *arg)
 {
     prov_stop_args_t *args = (prov_stop_args_t *)arg;
@@ -244,7 +385,20 @@ esp_err_t provisioning_start(provisioning_done_callback_t callback)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    s_dns_running = true;
+    BaseType_t dns_task_ok = xTaskCreate(dns_server_task, "dns_server", 4096, NULL, 5,
+                                         &s_dns_task_handle);
+    if (dns_task_ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start DNS task");
+        s_dns_running = false;
+        provisioning_stop();
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "DNS captive portal redirect enabled");
+
     server_config.server_port = 80;
+    server_config.max_uri_handlers = 8;
+    server_config.uri_match_fn = httpd_uri_match_wildcard;
     esp_err_t server_err = httpd_start(&s_server, &server_config);
     if (server_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(server_err));
@@ -266,8 +420,16 @@ esp_err_t provisioning_start(provisioning_done_callback_t callback)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t redirect_uri = {
+        .uri = "/*",
+        .method = HTTP_GET,
+        .handler = redirect_handler,
+        .user_ctx = NULL,
+    };
+
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &root_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &provision_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &redirect_uri));
 
     ESP_LOGI(TAG, "SoftAP started: %s", ap_ssid);
     ESP_LOGI(TAG, "Captive portal ready at 192.168.4.1");
@@ -276,6 +438,12 @@ esp_err_t provisioning_start(provisioning_done_callback_t callback)
 
 void provisioning_stop(void)
 {
+    s_dns_running = false;
+    if (s_dns_task_handle != NULL) {
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        s_dns_task_handle = NULL;
+    }
+
     if (s_server != NULL) {
         esp_err_t err = httpd_stop(s_server);
         if (err != ESP_OK) {
