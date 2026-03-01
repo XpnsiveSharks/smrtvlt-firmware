@@ -1,0 +1,9 @@
+menu "SmartVault Configuration"
+
+    config API_BASE_URL
+        string "API Base URL"
+        default "http://localhost:3000"
+        help
+            The base URL of the SmartVault API. Can be overridden at runtime via provisioning portal.
+
+endmenu
