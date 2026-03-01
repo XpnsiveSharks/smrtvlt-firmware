@@ -62,7 +62,7 @@ esp_err_t nfc_start_listener(nfc_callback_t callback)
 {
     s_callback = callback;
     if (s_task_handle == NULL) {
-        xTaskCreate(nfc_button_task, "nfc_button_task", 2048, NULL, 5, &s_task_handle);
+        xTaskCreate(nfc_button_task, "nfc_button_task", 4096, NULL, 5, &s_task_handle);
     }
     ESP_LOGI(TAG, "NFC listener started");
     return ESP_OK;

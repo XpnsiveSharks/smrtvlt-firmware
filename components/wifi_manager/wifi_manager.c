@@ -46,10 +46,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
 esp_err_t wifi_manager_init(void)
 {
-    s_wifi_event_group = xEventGroupCreate();
-    if (s_wifi_event_group == NULL) {
-        ESP_LOGE(TAG, "Failed to create WiFi event group");
-        return ESP_ERR_NO_MEM;
+    ESP_LOGI(TAG, "WiFi manager initializing...");
+
+    if (s_wifi_event_group != NULL) {
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    } else {
+        s_wifi_event_group = xEventGroupCreate();
+        if (s_wifi_event_group == NULL) {
+            ESP_LOGE(TAG, "Failed to create WiFi event group");
+            return ESP_ERR_NO_MEM;
+        }
     }
 
     esp_netif_create_default_wifi_sta();
@@ -74,13 +80,15 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
         return ESP_ERR_INVALID_ARG;
     }
 
+    ESP_LOGI(TAG, "Connecting to SSID=%s...", ssid);
+    s_retry_count = 0;
+
     wifi_config_t wifi_config;
     memset(&wifi_config, 0, sizeof(wifi_config));
     strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
     strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_connect());
 
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group,

@@ -77,7 +77,6 @@ static void on_provisioning_done(const provisioning_data_t *data) {
     if (strlen(data->api_url) > 0) {
         nvs_storage_save_api_url(data->api_url);
     }
-    provisioning_stop();
     ESP_ERROR_CHECK(wifi_manager_init());
     esp_err_t ret = wifi_manager_connect(data->ssid, data->password);
     if (ret != ESP_OK) { ESP_LOGE(TAG, "WiFi connection failed after provisioning"); return; }
