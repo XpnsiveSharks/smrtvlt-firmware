@@ -7,4 +7,10 @@ idf_component_register(
         nfc
         provisioning
         api_client
+        keypad
+        pin_auth
+        solenoid
+        buzzer
+        tamper
+        ws_client
 )
