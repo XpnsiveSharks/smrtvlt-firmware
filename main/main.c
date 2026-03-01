@@ -95,8 +95,19 @@ static void on_provisioning_done(const provisioning_data_t *data) {
     run_normal_mode();
 }
 
+// TODO: Remove BUTTON-TRIGGER handling once real NFC hardware is available.
 static void on_nfc_card_tapped(const char *uid) {
     ESP_LOGI(TAG, "NFC card tapped: %s", uid);
+
+    bool is_button_trigger = strcmp(uid, "BUTTON-TRIGGER") == 0;
+
+    if (is_button_trigger) {
+        ESP_LOGI(TAG, "Boot button pressed — triggering provisioning");
+        nfc_stop_listener();
+        provisioning_start(on_provisioning_done);
+        return;
+    }
+
     char stored_uid[NFC_UID_MAX_LEN] = {0};
     esp_err_t ret = nvs_storage_load_nfc_uid(stored_uid, sizeof(stored_uid));
     if (ret != ESP_OK || strlen(stored_uid) == 0) {
