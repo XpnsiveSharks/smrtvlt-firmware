@@ -6,6 +6,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "driver/gpio.h"
 
 #include "nvs_storage.h"
 #include "wifi_manager.h"
@@ -56,6 +57,33 @@ static void on_pin_entered(const char *pin) {
     pin_auth_verify(s_hw_uuid, pin, on_pin_auth_result);
 }
 
+// TODO: Remove once real NFC hardware is available.
+static void reprovision_button_task(void *arg)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_0),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+
+    ESP_LOGI("MAIN", "Re-provisioning button monitor active (GPIO0)");
+
+    while (1) {
+        if (gpio_get_level(GPIO_NUM_0) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            if (gpio_get_level(GPIO_NUM_0) == 0) {
+                ESP_LOGI("MAIN", "Boot button pressed in normal mode — erasing NVS and re-provisioning");
+                nvs_storage_erase_all();
+                esp_restart();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 static void run_normal_mode(void) {
     ESP_LOGI(TAG, "Entering normal mode...");
     ESP_ERROR_CHECK(solenoid_init());
@@ -67,6 +95,8 @@ static void run_normal_mode(void) {
     ESP_ERROR_CHECK(tamper_start());
     ESP_ERROR_CHECK(ws_client_init(s_api_url, s_hw_uuid));
     ESP_ERROR_CHECK(ws_client_start());
+    // TODO: Remove once real NFC hardware is available.
+    xTaskCreate(reprovision_button_task, "reprov_btn", 2048, NULL, 5, NULL);
     ESP_LOGI(TAG, "Normal mode active. System fully operational.");
 }
 
@@ -77,7 +107,6 @@ static void on_provisioning_done(const provisioning_data_t *data) {
     if (strlen(data->api_url) > 0) {
         nvs_storage_save_api_url(data->api_url);
     }
-    provisioning_stop();
     ESP_ERROR_CHECK(wifi_manager_init());
     esp_err_t ret = wifi_manager_connect(data->ssid, data->password);
     if (ret != ESP_OK) { ESP_LOGE(TAG, "WiFi connection failed after provisioning"); return; }
@@ -95,8 +124,20 @@ static void on_provisioning_done(const provisioning_data_t *data) {
     run_normal_mode();
 }
 
+// TODO: Remove BUTTON-TRIGGER handling once real NFC hardware is available.
 static void on_nfc_card_tapped(const char *uid) {
     ESP_LOGI(TAG, "NFC card tapped: %s", uid);
+
+    bool is_button_trigger = strcmp(uid, "BUTTON-TRIGGER") == 0;
+
+    if (is_button_trigger) {
+        ESP_LOGI(TAG, "Boot button pressed — erasing NVS and triggering provisioning");
+        nvs_storage_erase_all();
+        nfc_stop_listener();
+        provisioning_start(on_provisioning_done);
+        return;
+    }
+
     char stored_uid[NFC_UID_MAX_LEN] = {0};
     esp_err_t ret = nvs_storage_load_nfc_uid(stored_uid, sizeof(stored_uid));
     if (ret != ESP_OK || strlen(stored_uid) == 0) {

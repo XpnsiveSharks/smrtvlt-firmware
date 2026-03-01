@@ -21,3 +21,5 @@ esp_err_t nvs_storage_load_hardware_uuid(char *uuid, size_t uuid_len);
 
 esp_err_t nvs_storage_save_nfc_uid(const char *uid);
 esp_err_t nvs_storage_load_nfc_uid(char *uid, size_t uid_len);
+
+esp_err_t nvs_storage_erase_all(void);
