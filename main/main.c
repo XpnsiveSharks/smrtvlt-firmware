@@ -23,7 +23,7 @@
 static const char *TAG = "MAIN";
 
 #ifndef CONFIG_API_BASE_URL
-#define CONFIG_API_BASE_URL "http://localhost:3000"
+#define CONFIG_API_BASE_URL "http://localhost:8000"
 #endif
 
 #define WIFI_SSID_MAX_LEN   64
@@ -69,14 +69,20 @@ static void reprovision_button_task(void *arg)
     };
     gpio_config(&io_conf);
 
-    ESP_LOGI("MAIN", "Re-provisioning button monitor active (GPIO0)");
+    ESP_LOGI("MAIN", "Re-provisioning button monitor active (GPIO0) — hold BOOT 3s to re-provision");
 
     while (1) {
         if (gpio_get_level(GPIO_NUM_0) == 0) {
-            vTaskDelay(pdMS_TO_TICKS(50));
-            if (gpio_get_level(GPIO_NUM_0) == 0) {
-                ESP_LOGI("MAIN", "Boot button pressed in normal mode — erasing NVS and re-provisioning");
+            // Button pressed — wait and confirm hold for 3 seconds
+            int hold_ms = 0;
+            while (gpio_get_level(GPIO_NUM_0) == 0 && hold_ms < 3000) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                hold_ms += 100;
+            }
+            if (hold_ms >= 3000) {
+                ESP_LOGI("MAIN", "BOOT button held 3s — erasing NVS and re-provisioning");
                 nvs_storage_erase_all();
+                vTaskDelay(pdMS_TO_TICKS(200));
                 esp_restart();
             }
         }
@@ -96,8 +102,8 @@ static void run_normal_mode(void) {
     ESP_ERROR_CHECK(ws_client_init(s_api_url, s_hw_uuid));
     ESP_ERROR_CHECK(ws_client_start());
     // TODO: Remove once real NFC hardware is available.
-    xTaskCreate(reprovision_button_task, "reprov_btn", 2048, NULL, 5, NULL);
-    ESP_LOGI(TAG, "Normal mode active. System fully operational.");
+    xTaskCreate(reprovision_button_task, "reprov_btn", 4096, NULL, 5, NULL);
+    ESP_LOGI(TAG, "Normal mode active. Hold BOOT 3s to re-provision.");
 }
 
 static void on_provisioning_done(const provisioning_data_t *data) {
