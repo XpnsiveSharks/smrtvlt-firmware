@@ -18,7 +18,7 @@ static TaskHandle_t s_task_handle = NULL;
 
 static void send_tamper_alert(void) {
     char url[192];
-    snprintf(url, sizeof(url), "%s/devices/tamper", s_base_url);
+    snprintf(url, sizeof(url), "%s/api/v1/devices/tamper", s_base_url);
     char body[128];
     snprintf(body, sizeof(body), "{\"hardware_uuid\":\"%s\"}", s_hw_uuid);
 

@@ -1,3 +1,9 @@
+# API Backend
+# Default API base URL used when the user leaves the "API URL" field blank
+# during captive-portal provisioning.  Change this for production deployments.
+# Swagger UI: http://localhost:8000/docs
+CONFIG_API_BASE_URL="http://localhost:8000"
+
 # UART2 for NFC Reader
 CONFIG_UART_ISR_IN_IRAM=y
 

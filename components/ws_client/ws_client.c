@@ -45,7 +45,7 @@ static void build_ws_url(const char *base_url, const char *hardware_uuid, char *
         strncpy(proto_replaced, base_url, sizeof(proto_replaced) - 1);
     }
 
-    snprintf(out, out_len, "%s/devices/ws?hardware_uuid=%s", proto_replaced, hardware_uuid);
+    snprintf(out, out_len, "%s/api/v1/ws/vault?hardware_uuid=%s", proto_replaced, hardware_uuid);
 }
 
 static void handle_command(const char *data, int len)

@@ -23,7 +23,7 @@ esp_err_t pin_auth_init(const char *base_url)
 esp_err_t pin_auth_verify(const char *hardware_uuid, const char *pin, pin_auth_result_callback_t callback)
 {
     char url[192];
-    snprintf(url, sizeof(url), "%s/devices/verify-pin", s_base_url);
+    snprintf(url, sizeof(url), "%s/api/v1/devices/verify-pin", s_base_url);
 
     char body[256];
     snprintf(body, sizeof(body),
